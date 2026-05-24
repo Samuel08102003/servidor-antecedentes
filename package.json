@@ -1,0 +1,14 @@
+{
+  "name": "servidor-antecedentes",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "build": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "playwright": "^1.40.0"
+  },
+  "engines": { "node": ">=18" }
+}
