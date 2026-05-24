@@ -270,9 +270,10 @@ function parseResult(html, cedula) {
 
   // Con antecedentes
   if (
-    lower.includes('tiene asuntos pendientes') ||
-    lower.includes('registra antecedentes') ||
-    lower.includes('requerimiento judicial')
+    lower.includes('no encontrado') ||
+  lower.includes('no se encontró') ||
+  lower.includes('documento no válido') ||
+  lower.includes('número de identificación no')
   ) {
     return {
       cedula,
