@@ -249,7 +249,8 @@ async function transcribirAudio(url, modelo = 'base') {
 function parseResult(html, cedula) {
   const lower = html.toLowerCase();
   const ts = new Date().toISOString();
-
+const textPlano = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    console.log('[RESULTADO PAGINA]', textPlano.slice(0, 600));
   if (
     lower.includes('no registra antecedentes') ||
     lower.includes('no presenta antecedentes') ||
