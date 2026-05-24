@@ -68,13 +68,14 @@ app.post('/consulta-antecedentes', async (req, res) => {
 
     // ── PASO 3: Resolver reCAPTCHA por audio (gratis, sin API externa) ───
     const captchaSolved = await solveAudioCaptcha(page);
+    console.log('[CAPTCHA RESUELTO]', captchaSolved);
+
     if (!captchaSolved) {
       throw new Error('No se pudo resolver el CAPTCHA automáticamente');
     }
 
     // ── PASO 4: Enviar formulario y leer resultado ───────────────────────
-    await page.waitForTimeout(2000); // esperar que limpie overlay del captcha
-    // Clic por JavaScript para evitar bloqueos de elementos superpuestos
+    await page.waitForTimeout(2000);
     await page.evaluate(() => {
       const btn = document.querySelector('#j_idt17');
       if (btn) btn.click();
@@ -82,6 +83,9 @@ app.post('/consulta-antecedentes', async (req, res) => {
     await page.waitForTimeout(5000);
 
     const html = await page.content();
+    const textoCompleto = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    console.log('[PAGINA RESULTADO - PRIMEROS 800 CHARS]', textoCompleto.slice(0, 800));
+
     return res.json(parseResult(html, cedula));
 
   } catch (err) {
@@ -270,10 +274,9 @@ function parseResult(html, cedula) {
 
   // Con antecedentes
   if (
-    lower.includes('no encontrado') ||
-  lower.includes('no se encontró') ||
-  lower.includes('documento no válido') ||
-  lower.includes('número de identificación no')
+    lower.includes('tiene asuntos pendientes') ||
+    lower.includes('registra antecedentes') ||
+    lower.includes('requerimiento judicial')
   ) {
     return {
       cedula,
@@ -289,10 +292,9 @@ function parseResult(html, cedula) {
   // Cédula no encontrada / no existe en el sistema
   if (
     lower.includes('no encontrado') ||
-    lower.includes('no existe') ||
-    lower.includes('no se encontr') ||
+    lower.includes('no se encontró') ||
     lower.includes('documento no válido') ||
-    lower.includes('número de documento')
+    lower.includes('número de identificación no')
   ) {
     return {
       cedula,
