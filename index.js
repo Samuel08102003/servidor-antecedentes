@@ -73,12 +73,13 @@ app.post('/consulta-antecedentes', async (req, res) => {
     }
 
     // ── PASO 4: Enviar formulario y leer resultado ───────────────────────
-    await page.waitForTimeout(2000);
-      await page.evaluate(() => {
-        const btn = document.querySelector('#j_idt17');
-        if (btn) btn.click();
-      });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(2000); // esperar que limpie overlay del captcha
+    // Clic por JavaScript para evitar bloqueos de elementos superpuestos
+    await page.evaluate(() => {
+      const btn = document.querySelector('#j_idt17');
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(5000);
 
     const html = await page.content();
     return res.json(parseResult(html, cedula));
@@ -249,66 +250,68 @@ async function transcribirAudio(url, modelo = 'base') {
 function parseResult(html, cedula) {
   const lower = html.toLowerCase();
   const ts = new Date().toISOString();
-const textPlano = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    console.log('[RESULTADO PAGINA]', textPlano.slice(0, 600));
-  if (
-    lower.includes('no registra antecedentes') ||
-    lower.includes('no presenta antecedentes') ||
-    lower.includes('sin antecedentes') ||
-    lower.includes('no tiene antecedentes')
-  ) {
+
+  // Extraer nombre de la respuesta: "Apellidos y Nombres: NOMBRE COMPLETO"
+  const nombreMatch = html.match(/Apellidos y Nombres[:\s]+([A-ZÁÉÍÓÚÑ\s]+?)(?:<|\n|$)/i);
+  const nombrePolicia = nombreMatch ? nombreMatch[1].trim() : null;
+
+  // Sin antecedentes — frase oficial de la Policía Nacional
+  if (lower.includes('no tiene asuntos pendientes')) {
     return {
       cedula,
+      cedula_existe: true,
+      nombre_policia: nombrePolicia,
       tiene_antecedentes: false,
       estado: 'limpio',
-      mensaje: 'No registra antecedentes judiciales',
+      mensaje: 'Cédula válida — No tiene asuntos pendientes con las autoridades judiciales',
       consultado_en: ts,
     };
   }
 
+  // Con antecedentes
   if (
-    (lower.includes('registra antecedentes') && !lower.includes('no registra')) ||
-    (lower.includes('presenta antecedentes') && !lower.includes('no presenta')) ||
-    lower.includes('tiene antecedentes') ||
-    lower.includes('antecedentes penales')
+    lower.includes('tiene asuntos pendientes') ||
+    lower.includes('registra antecedentes') ||
+    lower.includes('requerimiento judicial')
   ) {
     return {
       cedula,
+      cedula_existe: true,
+      nombre_policia: nombrePolicia,
       tiene_antecedentes: true,
       estado: 'alerta',
-      mensaje: 'ALERTA: Registra antecedentes judiciales — NO otorgar cupo',
+      mensaje: 'ALERTA: Tiene asuntos pendientes con autoridades judiciales — NO otorgar cupo',
       consultado_en: ts,
     };
   }
 
+  // Cédula no encontrada / no existe en el sistema
   if (
     lower.includes('no encontrado') ||
     lower.includes('no existe') ||
-    lower.includes('documento no v') ||
-    lower.includes('no se encontr')
+    lower.includes('no se encontr') ||
+    lower.includes('documento no válido') ||
+    lower.includes('número de documento')
   ) {
     return {
       cedula,
+      cedula_existe: false,
+      nombre_policia: null,
       tiene_antecedentes: null,
       estado: 'no_encontrado',
-      mensaje: 'Cédula no encontrada en el sistema de la Policía',
+      mensaje: 'Cédula NO existe en el sistema de la Policía Nacional',
       consultado_en: ts,
     };
   }
 
-  // Resultado no reconocido — incluir fragmento para diagnóstico
-  const snippet = html
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 400);
-
+  // No reconocido
+  const snippet = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+  console.log('[RESULTADO NO RECONOCIDO]', snippet);
   return {
     cedula,
     tiene_antecedentes: null,
     estado: 'indeterminado',
     mensaje: 'No se pudo determinar. Verifica manualmente.',
-    debug: snippet,
     consultado_en: ts,
   };
 }
