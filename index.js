@@ -73,7 +73,11 @@ app.post('/consulta-antecedentes', async (req, res) => {
     }
 
     // ── PASO 4: Enviar formulario y leer resultado ───────────────────────
-    await page.locator('#j_idt17').click();
+    await page.waitForTimeout(2000);
+      await page.evaluate(() => {
+        const btn = document.querySelector('#j_idt17');
+        if (btn) btn.click();
+      });
     await page.waitForTimeout(4000);
 
     const html = await page.content();
