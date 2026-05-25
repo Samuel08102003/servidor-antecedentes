@@ -1,4 +1,4 @@
-● const express = require('express');
+ const express = require('express');
   const { chromium } = require('playwright');
 
   const app = express();
