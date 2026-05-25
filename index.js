@@ -1,4 +1,4 @@
-const express = require('express');
+● const express = require('express');
   const { chromium } = require('playwright');
 
   const app = express();
@@ -68,9 +68,25 @@ const express = require('express');
       await page.fill('#cedulaInput', cedula);
 
       // PASO 3: Resolver reCAPTCHA
-      const captchaSolved = await solveRecaptcha(page);
-      console.log('[CAPTCHA RESUELTO]', captchaSolved);
-      if (!captchaSolved) throw new Error('No se pudo resolver el CAPTCHA');
+      const quotaExcedida = await page.evaluate(() => {
+        const text = document.body.innerText || '';
+        return text.includes('supera la cuota') || text.includes('quota');
+      });
+
+      let captchaSolved = false;
+
+      if (quotaExcedida) {
+        console.log('[CAPTCHA] Cuota excedida — intentando envío directo');
+        await page.evaluate(() => {
+          const fields = document.querySelectorAll('[name="g-recaptcha-response"]');
+          fields.forEach(f => f.value = 'quota-exceeded-bypass');
+        });
+        captchaSolved = true;
+      } else {
+        captchaSolved = await solveRecaptcha(page);
+        console.log('[CAPTCHA RESUELTO]', captchaSolved);
+        if (!captchaSolved) throw new Error('No se pudo resolver el CAPTCHA');
+      }
 
       // PASO 4: Enviar formulario
       await page.waitForTimeout(1500);
@@ -118,7 +134,6 @@ const express = require('express');
         return true;
       }
 
-      // Esperar hasta 15 segundos que aparezca el bframe
       let bframe = null;
       for (let i = 0; i < 15; i++) {
         await page.waitForTimeout(1000);
@@ -143,12 +158,34 @@ const express = require('express');
 
   async function resolverAudio(page, bframe, anchor) {
     try {
-      await bframe.locator('#recaptcha-audio-button').click({ timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(2000);
 
-      const audioUrl = await bframe
-        .locator('.rc-audiochallenge-tdownload-link a')
-        .getAttribute('href', { timeout: 8000 });
+      const bloqueado = await bframe.locator('.rc-doscaptcha-body').isVisible().catch(() => false);
+      if (bloqueado) {
+        console.log('[AUDIO] Google bloqueó el desafío');
+        return false;
+      }
+
+      const audioBtnVisible = await bframe.locator('#recaptcha-audio-button').isVisible().catch(() => false);
+      console.log('[AUDIO BTN VISIBLE]', audioBtnVisible);
+
+      if (!audioBtnVisible) {
+        console.log('[AUDIO] No hay botón de audio');
+        return false;
+      }
+
+      await bframe.locator('#recaptcha-audio-button').click({ timeout: 8000 });
+      await page.waitForTimeout(3000);
+
+      let audioUrl = await bframe.locator('.rc-audiochallenge-tdownload-link a')
+        .getAttribute('href', { timeout: 5000 }).catch(() => null);
+
+      if (!audioUrl) {
+        audioUrl = await bframe.evaluate(() => {
+          const el = document.querySelector('audio source, .rc-audiochallenge-audio-src');
+          return el?.src || el?.getAttribute('src') || null;
+        }).catch(() => null);
+      }
 
       if (!audioUrl) throw new Error('No se encontró URL de audio');
       console.log('[AUDIO URL]', audioUrl.slice(0, 60));
@@ -161,16 +198,14 @@ const express = require('express');
       await bframe.locator('#recaptcha-verify-button').click();
       await page.waitForTimeout(2500);
 
-      const resuelto = await anchor
-        .locator('.recaptcha-checkbox-checkmark')
-        .isVisible()
-        .catch(() => false);
+      const resuelto = await anchor.locator('.recaptcha-checkbox-checkmark').isVisible().catch(() => false);
 
       if (!resuelto) {
         console.log('[AUDIO] Primer intento fallido, reintentando...');
         await bframe.locator('.rc-audiochallenge-play-button button').click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(1500);
-        const url2 = await bframe.locator('.rc-audiochallenge-tdownload-link a').getAttribute('href', { timeout: 5000 }).catch(() => null);
+        const url2 = await bframe.locator('.rc-audiochallenge-tdownload-link a')
+          .getAttribute('href', { timeout: 5000 }).catch(() => null);
         if (!url2) return false;
         const resp2 = await transcribirAudio(url2, 'large');
         if (!resp2) return false;
