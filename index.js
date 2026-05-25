@@ -37,7 +37,7 @@ const express = require('express');
       // PASO 2: Aceptar términos — POST normal
       const params2 = new URLSearchParams();
       params2.append('form', 'form');
-      params2.append('aceptaOption', '0');
+      params2.append('aceptaOption', 'true');
       params2.append('continuarBtn', 'continuarBtn');
       params2.append('javax.faces.ViewState', vs1);
 
