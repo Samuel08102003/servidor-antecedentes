@@ -34,7 +34,7 @@ const express = require('express');
       const vs1 = extraerViewState(r1.data);
       console.log('[PASO 1] Cookies:', cookies1, '| ViewState:', vs1?.slice(0, 30));
 
-      // PASO 2: Aceptar términos — POST normal
+      // PASO 2: Aceptar términos
       const params2 = new URLSearchParams();
       params2.append('form', 'form');
       params2.append('aceptaOption', 'true');
@@ -55,34 +55,48 @@ const express = require('express');
         cookies1,
         ...(r2.headers['set-cookie'] || []).map(c => c.split(';')[0])
       ].join('; ');
+      console.log('[PASO 2] Términos aceptados');
 
-      const vs2 = extraerViewState(r2.data);
-      const inputsMatch = r2.data.match(/<input[^>]*>/gi) || [];
-      console.log('[PASO 2] Campos del form:', inputsMatch.join('\n'));
-      console.log('[PASO 2] ViewState:', vs2?.slice(0, 30));
-
-      // PASO 3: Enviar consulta con ViewState de PASO 2
-      const params3 = new URLSearchParams();
-      params3.append('formConsulta', 'formConsulta');
-      params3.append('formConsulta:cedulaTipo', 'cc');
-      params3.append('formConsulta:cedulaInput', cedula);
-      params3.append('formConsulta:j_idt17', 'Consultar');
-      params3.append('g-recaptcha-response', '');
-      params3.append('javax.faces.ViewState', vs2);
-
-      const r3 = await axios.post(`${BASE}/antecedentes.xhtml`, params3.toString(), {
+      // PASO 3: GET antecedentes para obtener ViewState correcto
+      const r3 = await axios.get(`${BASE}/antecedentes.xhtml`, {
         httpsAgent: agent,
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
           'Cookie': cookies2,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         },
       });
 
-      console.log('[PASO 3] Status:', r3.status);
-      console.log('[PASO 3] HTML:', r3.data?.slice(0, 1000));
+      const cookies3 = [
+        cookies2,
+        ...(r3.headers['set-cookie'] || []).map(c => c.split(';')[0])
+      ].join('; ');
+      const vs3 = extraerViewState(r3.data);
+      const inputs3 = r3.data.match(/<input[^>]*>/gi) || [];
+      console.log('[PASO 3] ViewState:', vs3?.slice(0, 30));
+      console.log('[PASO 3] Campos:', inputs3.join('\n'));
 
-      return res.json(parseResult(r3.data, cedula));
+      // PASO 4: Enviar consulta
+      const params4 = new URLSearchParams();
+      params4.append('formConsulta', 'formConsulta');
+      params4.append('formConsulta:cedulaTipo', 'cc');
+      params4.append('formConsulta:cedulaInput', cedula);
+      params4.append('formConsulta:j_idt17', 'Consultar');
+      params4.append('g-recaptcha-response', '');
+      params4.append('javax.faces.ViewState', vs3);
+
+      const r4 = await axios.post(`${BASE}/antecedentes.xhtml`, params4.toString(), {
+        httpsAgent: agent,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookies3,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      });
+
+      console.log('[PASO 4] Status:', r4.status);
+      console.log('[PASO 4] HTML:', r4.data?.slice(0, 500));
+
+      return res.json(parseResult(r4.data, cedula));
 
     } catch (err) {
       console.error('[ERROR]', err.message);
