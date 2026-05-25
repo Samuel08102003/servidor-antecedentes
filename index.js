@@ -17,7 +17,7 @@
   app.post('/consulta-antecedentes', async (req, res) => {
     const cedula = String(req.body?.cedula || '').trim();
     if (!cedula || !/^\d{5,12}$/.test(cedula)) {
-      return res.status(400).json({ error: 'Cédula inválida (5-12 dígitos)' });
+      return res.status(400).json({ error: 'Cedula invalida (5-12 digitos)' });
     }
 
     let browser = null;
@@ -40,7 +40,6 @@
 
       const page = await ctx.newPage();
 
-      // PASO 1: Aceptar términos
       await page.goto('https://antecedentes.policia.gov.co:7005/WebJudicial/index.xhtml', {
         waitUntil: 'domcontentloaded', timeout: 30000,
       });
@@ -51,21 +50,18 @@
       await page.waitForURL('**/formAntecedentes.xhtml', { timeout: 15000 });
       await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(2000);
-      console.log('[PASO 1] Términos aceptados');
+      console.log('[PASO 1] Terminos aceptados');
 
-      // PASO 2: Llenar cédula
       await page.waitForSelector('#cedulaInput', { timeout: 10000 });
       await page.selectOption('#cedulaTipo', 'cc');
       await page.fill('#cedulaInput', cedula);
-      console.log('[PASO 2] Cédula ingresada:', cedula);
+      console.log('[PASO 2] Cedula ingresada:', cedula);
 
-      // PASO 3: Resolver CAPTCHA automáticamente
       console.log('[PASO 3] Resolviendo CAPTCHA...');
       const solver = new RecaptchaSolver(page);
       await solver.solve();
       console.log('[PASO 3] CAPTCHA resuelto');
 
-      // PASO 4: Esperar que el poll detecte el CAPTCHA y muestre resultados
       await Promise.race([
         page.waitForSelector(':text("asuntos pendientes")', { timeout: 30000 }),
         page.waitForSelector(':text("no tiene asuntos")', { timeout: 30000 }),
@@ -90,7 +86,7 @@
   function parseResult(html, cedula) {
     const lower = (html || '').toLowerCase();
     const ts = new Date().toISOString();
-    const nombreMatch = html.match(/Apellidos y Nombres[:\s]+([A-ZÁÉÍÓÚÑ\s]+?)(?:<|\n|$)/i);
+    const nombreMatch = html.match(/Apellidos y Nombres[:\s]+([A-ZAEIOUNS\s]+?)(?:<|\n|$)/i);
     const nombrePolicia = nombreMatch ? nombreMatch[1].trim() : null;
 
     if (lower.includes('no tiene asuntos pendientes')) {
@@ -99,8 +95,8 @@
     if (lower.includes('tiene asuntos pendientes') || lower.includes('registra antecedentes')) {
       return { cedula, cedula_existe: true, nombre_policia: nombrePolicia, tiene_antecedentes: true, estado: 'alerta', mensaje: 'ALERTA: Tiene asuntos pendientes', consultado_en: ts };
     }
-    if (lower.includes('no encontrado') || lower.includes('no se encontró')) {
-      return { cedula, cedula_existe: false, nombre_policia: null, tiene_antecedentes: null, estado: 'no_encontrado', mensaje: 'Cédula NO existe en el sistema', consultado_en: ts };
+    if (lower.includes('no encontrado') || lower.includes('no se encontro')) {
+      return { cedula, cedula_existe: false, nombre_policia: null, tiene_antecedentes: null, estado: 'no_encontrado', mensaje: 'Cedula NO existe en el sistema', consultado_en: ts };
     }
 
     const snippet = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
@@ -109,4 +105,4 @@
   }
 
   const PORT = process.env.PORT || 10000;
-  app.listen(PORT, () => console.log(`Servidor antecedentes activo en puerto ${PORT}`));
+  app.listen(PORT, () => console.log('Servidor antecedentes activo en puerto ' + PORT));
