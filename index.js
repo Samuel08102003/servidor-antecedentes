@@ -69,9 +69,46 @@ app.post('/consulta-antecedentes', async (req, res) => {
     await page.fill('#cedulaInput', cedula);
 
     // PASO 3: Resolver reCAPTCHA
-    const captchaSolved = await solveRecaptcha(page);
-    console.log('[CAPTCHA RESUELTO]', captchaSolved);
-    if (!captchaSolved) throw new Error('No se pudo resolver el CAPTCHA');
+    async function solveRecaptcha(page) {
+    try {
+      await page.waitForTimeout(4000);
+
+      // Buscar iframe con find() en lugar de frame()
+      const frames = page.frames();
+      console.log('[FRAMES]', frames.map(f => f.url()).join('\n'));
+
+      const anchor = frames.find(f => /recaptcha\/api2\/anchor/.test(f.url()));
+      if (!anchor) throw new Error('No se encontró iframe reCAPTCHA');
+
+      await page.mouse.move(300 + Math.random() * 100, 400 + Math.random() * 50);
+      await page.waitForTimeout(300 + Math.random() * 400);
+
+      await anchor.locator('#recaptcha-anchor').click({ timeout: 10000 });
+      await page.waitForTimeout(4000);
+
+      const token = await page.evaluate(() =>
+        document.querySelector('[name="g-recaptcha-response"]')?.value || ''
+      );
+      console.log('[TOKEN LENGTH]', token.length);
+
+      if (token.length > 200) {
+        console.log('[CAPTCHA] Resuelto por checkbox');
+        return true;
+      }
+
+      // Buscar bframe
+      const allFrames = page.frames();
+      const bframe = allFrames.find(f => /recaptcha\/api2\/bframe/.test(f.url()));
+      if (bframe) return await resolverAudio(page, bframe, anchor);
+
+      console.log('[CAPTCHA] No se encontró bframe');
+      return false;
+
+    } catch (err) {
+      console.error('[CAPTCHA ERROR]', err.message);
+      return false;
+    }
+  }
 
     // PASO 4: Enviar formulario
     await page.waitForTimeout(1500);
