@@ -92,7 +92,7 @@ const express = require('express');
   });
 
   // ── Resolver reCAPTCHA ─────────────────────────────────────────────────────
- async function solveRecaptcha(page) {
+  async function solveRecaptcha(page) {
     try {
       await page.waitForTimeout(4000);
 
@@ -137,6 +137,52 @@ const express = require('express');
 
     } catch (err) {
       console.error('[CAPTCHA ERROR]', err.message);
+      return false;
+    }
+  }
+
+  async function resolverAudio(page, bframe, anchor) {
+    try {
+      await bframe.locator('#recaptcha-audio-button').click({ timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+
+      const audioUrl = await bframe
+        .locator('.rc-audiochallenge-tdownload-link a')
+        .getAttribute('href', { timeout: 8000 });
+
+      if (!audioUrl) throw new Error('No se encontró URL de audio');
+      console.log('[AUDIO URL]', audioUrl.slice(0, 60));
+
+      const respuesta = await transcribirAudio(audioUrl);
+      if (!respuesta) throw new Error('Transcripción de audio falló');
+      console.log('[AUDIO RESPUESTA]', respuesta);
+
+      await bframe.locator('#audio-response').fill(respuesta.toLowerCase().trim());
+      await bframe.locator('#recaptcha-verify-button').click();
+      await page.waitForTimeout(2500);
+
+      const resuelto = await anchor
+        .locator('.recaptcha-checkbox-checkmark')
+        .isVisible()
+        .catch(() => false);
+
+      if (!resuelto) {
+        console.log('[AUDIO] Primer intento fallido, reintentando...');
+        await bframe.locator('.rc-audiochallenge-play-button button').click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+        const url2 = await bframe.locator('.rc-audiochallenge-tdownload-link a').getAttribute('href', { timeout: 5000 }).catch(() => null);
+        if (!url2) return false;
+        const resp2 = await transcribirAudio(url2, 'large');
+        if (!resp2) return false;
+        await bframe.locator('#audio-response').fill(resp2.toLowerCase().trim());
+        await bframe.locator('#recaptcha-verify-button').click();
+        await page.waitForTimeout(2500);
+        return await anchor.locator('.recaptcha-checkbox-checkmark').isVisible().catch(() => false);
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[AUDIO ERROR]', err.message);
       return false;
     }
   }
