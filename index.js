@@ -25,42 +25,38 @@ const express = require('express');
 
     try {
       // PASO 1: Cargar index y obtener cookies de sesión
-      const r1 = await axios.get(`${BASE}/index.xhtml`, {
-        httpsAgent: agent,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      });
+  const r1 = await axios.get(`${BASE}/index.xhtml`, {
+    httpsAgent: agent,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+  });
 
-      const cookies1 = (r1.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-      const vs1 = extraerViewState(r1.data);
-      console.log('[PASO 1] Cookies:', cookies1, '| ViewState:', vs1?.slice(0, 30));
+  const cookies1 = (r1.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+  const vs1 = extraerViewState(r1.data);
+  console.log('[PASO 1] Cookies:', cookies1, '| ViewState:', vs1?.slice(0, 30));
 
-      // PASO 2: Aceptar términos
-      const params2 = new URLSearchParams();
-      params2.append('javax.faces.partial.ajax', 'true');
-      params2.append('javax.faces.source', 'continuarBtn');
-      params2.append('javax.faces.partial.execute', '@all');
-      params2.append('javax.faces.partial.render', '@all');
-      params2.append('continuarBtn', 'continuarBtn');
-      params2.append('form', 'form');
-      params2.append('aceptaOption', '0');
-      params2.append('javax.faces.ViewState', vs1);
+  // PASO 2: Aceptar términos — POST normal (no AJAX)
+  const params2 = new URLSearchParams();
+  params2.append('form', 'form');
+  params2.append('aceptaOption', '0');
+  params2.append('continuarBtn', 'continuarBtn');
+  params2.append('javax.faces.ViewState', vs1);
 
-      const r2 = await axios.post(`${BASE}/index.xhtml`, params2.toString(), {
-        httpsAgent: agent,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookies1,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Faces-Request': 'partial/ajax',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-      });
+  const r2 = await axios.post(`${BASE}/index.xhtml`, params2.toString(), {
+    httpsAgent: agent,
+    maxRedirects: 10,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Cookie': cookies1,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    },
+  });
 
-      const cookies2 = [
-        cookies1,
-        ...(r2.headers['set-cookie'] || []).map(c => c.split(';')[0])
-      ].join('; ');
-      console.log('[PASO 2] Términos aceptados');
+  const cookies2 = [
+    cookies1,
+    ...(r2.headers['set-cookie'] || []).map(c => c.split(';')[0])
+  ].join('; ');
+  console.log('[PASO 2] URL final:', r2.request?.path || r2.config?.url);
+  console.log('[PASO 2] Contiene formulario cedula:', r2.data.includes('cedulaInput'));
 
       // PASO 3: Cargar página de consulta y obtener nuevo ViewState
       const r3 = await axios.get(`${BASE}/antecedentes.xhtml`, {
