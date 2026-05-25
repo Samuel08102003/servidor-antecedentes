@@ -1,5 +1,8 @@
- const express = require('express');
-  const { chromium } = require('playwright');
+const { chromium } = require('playwright-extra');
+  const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+  chromium.use(StealthPlugin());
+
+  const express = require('express');
 
   const app = express();
   app.use(express.json());
@@ -68,25 +71,9 @@
       await page.fill('#cedulaInput', cedula);
 
       // PASO 3: Resolver reCAPTCHA
-      const quotaExcedida = await page.evaluate(() => {
-        const text = document.body.innerText || '';
-        return text.includes('supera la cuota') || text.includes('quota');
-      });
-
-      let captchaSolved = false;
-
-      if (quotaExcedida) {
-        console.log('[CAPTCHA] Cuota excedida — intentando envío directo');
-        await page.evaluate(() => {
-          const fields = document.querySelectorAll('[name="g-recaptcha-response"]');
-          fields.forEach(f => f.value = 'quota-exceeded-bypass');
-        });
-        captchaSolved = true;
-      } else {
-        captchaSolved = await solveRecaptcha(page);
-        console.log('[CAPTCHA RESUELTO]', captchaSolved);
-        if (!captchaSolved) throw new Error('No se pudo resolver el CAPTCHA');
-      }
+      const captchaSolved = await solveRecaptcha(page);
+      console.log('[CAPTCHA RESUELTO]', captchaSolved);
+      if (!captchaSolved) throw new Error('No se pudo resolver el CAPTCHA');
 
       // PASO 4: Enviar formulario
       await page.waitForTimeout(1500);
@@ -119,10 +106,10 @@
       if (!anchor) throw new Error('No se encontró iframe reCAPTCHA');
 
       await page.mouse.move(300 + Math.random() * 100, 400 + Math.random() * 50);
-      await page.waitForTimeout(300 + Math.random() * 400);
+      await page.waitForTimeout(500 + Math.random() * 500);
 
       await anchor.locator('#recaptcha-anchor').click({ timeout: 10000 });
-      await page.waitForTimeout(4000);
+      await page.waitForTimeout(5000);
 
       const token = await page.evaluate(() =>
         document.querySelector('[name="g-recaptcha-response"]')?.value || ''
@@ -130,10 +117,11 @@
       console.log('[TOKEN LENGTH]', token.length);
 
       if (token.length > 200) {
-        console.log('[CAPTCHA] Resuelto por checkbox');
+        console.log('[CAPTCHA] Resuelto por checkbox — stealth funcionó');
         return true;
       }
 
+      // Si stealth no fue suficiente, intentar audio
       let bframe = null;
       for (let i = 0; i < 15; i++) {
         await page.waitForTimeout(1000);
@@ -143,7 +131,7 @@
       }
 
       if (bframe) {
-        console.log('[CAPTCHA] bframe encontrado');
+        console.log('[CAPTCHA] bframe encontrado — intentando audio');
         return await resolverAudio(page, bframe, anchor);
       }
 
@@ -175,20 +163,26 @@
       }
 
       await bframe.locator('#recaptcha-audio-button').click({ timeout: 8000 });
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(5000);
+
+      const bloqueadoDespues = await bframe.locator('.rc-doscaptcha-body').isVisible().catch(() => false);
+      if (bloqueadoDespues) {
+        console.log('[AUDIO] Google bloqueó después del clic');
+        return false;
+      }
 
       let audioUrl = await bframe.locator('.rc-audiochallenge-tdownload-link a')
-        .getAttribute('href', { timeout: 5000 }).catch(() => null);
+        .getAttribute('href', { timeout: 10000 }).catch(() => null);
 
       if (!audioUrl) {
         audioUrl = await bframe.evaluate(() => {
-          const el = document.querySelector('audio source, .rc-audiochallenge-audio-src');
-          return el?.src || el?.getAttribute('src') || null;
+          const audio = document.querySelector('audio');
+          return audio?.src || audio?.querySelector('source')?.src || null;
         }).catch(() => null);
       }
 
+      console.log('[AUDIO URL]', audioUrl ? audioUrl.slice(0, 60) : 'null');
       if (!audioUrl) throw new Error('No se encontró URL de audio');
-      console.log('[AUDIO URL]', audioUrl.slice(0, 60));
 
       const respuesta = await transcribirAudio(audioUrl);
       if (!respuesta) throw new Error('Transcripción de audio falló');
