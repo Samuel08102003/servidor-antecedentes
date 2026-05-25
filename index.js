@@ -34,7 +34,7 @@ const express = require('express');
   const vs1 = extraerViewState(r1.data);
   console.log('[PASO 1] Cookies:', cookies1, '| ViewState:', vs1?.slice(0, 30));
 
-  // PASO 2: Aceptar términos — POST normal (no AJAX)
+  // PASO 2: Aceptar términos — POST normal
   const params2 = new URLSearchParams();
   params2.append('form', 'form');
   params2.append('aceptaOption', '0');
@@ -55,24 +55,36 @@ const express = require('express');
     cookies1,
     ...(r2.headers['set-cookie'] || []).map(c => c.split(';')[0])
   ].join('; ');
-  console.log('[PASO 2] URL final:', r2.request?.path || r2.config?.url);
-  console.log('[PASO 2] Contiene formulario cedula:', r2.data.includes('cedulaInput'));
 
-      // PASO 3: Cargar página de consulta y obtener nuevo ViewState
-      const r3 = await axios.get(`${BASE}/antecedentes.xhtml`, {
-        httpsAgent: agent,
-        headers: {
-          'Cookie': cookies2,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-      });
+  const vs2 = extraerViewState(r2.data);
 
-      const cookies3 = [
-        cookies2,
-        ...(r3.headers['set-cookie'] || []).map(c => c.split(';')[0])
-      ].join('; ');
-      const vs3 = extraerViewState(r3.data);
-      console.log('[PASO 3] ViewState consulta:', vs3?.slice(0, 30));
+  // Mostrar campos del formulario
+  const inputsMatch = r2.data.match(/<input[^>]*>/gi) || [];
+  console.log('[PASO 2] Campos del form:', inputsMatch.join('\n'));
+  console.log('[PASO 2] ViewState:', vs2?.slice(0, 30));
+
+  // PASO 3: Enviar consulta directamente con ViewState de PASO 2
+  const params3 = new URLSearchParams();
+  params3.append('formConsulta', 'formConsulta');
+  params3.append('formConsulta:cedulaTipo', 'cc');
+  params3.append('formConsulta:cedulaInput', cedula);
+  params3.append('formConsulta:j_idt17', 'Consultar');
+  params3.append('g-recaptcha-response', '');
+  params3.append('javax.faces.ViewState', vs2);
+
+  const r3 = await axios.post(`${BASE}/antecedentes.xhtml`, params3.toString(), {
+    httpsAgent: agent,
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Cookie': cookies2,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    },
+  });
+
+  console.log('[PASO 3] Status:', r3.status);
+  console.log('[PASO 3] HTML:', r3.data?.slice(0, 1000));
+
+  return res.json(parseResult(r3.data, cedula));
 
       // PASO 4: Enviar consulta con cédula
       const params4 = new URLSearchParams();
