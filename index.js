@@ -25,95 +25,64 @@ const express = require('express');
 
     try {
       // PASO 1: Cargar index y obtener cookies de sesión
-  const r1 = await axios.get(`${BASE}/index.xhtml`, {
-    httpsAgent: agent,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-  });
-
-  const cookies1 = (r1.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-  const vs1 = extraerViewState(r1.data);
-  console.log('[PASO 1] Cookies:', cookies1, '| ViewState:', vs1?.slice(0, 30));
-
-  // PASO 2: Aceptar términos — POST normal
-  const params2 = new URLSearchParams();
-  params2.append('form', 'form');
-  params2.append('aceptaOption', '0');
-  params2.append('continuarBtn', 'continuarBtn');
-  params2.append('javax.faces.ViewState', vs1);
-
-  const r2 = await axios.post(`${BASE}/index.xhtml`, params2.toString(), {
-    httpsAgent: agent,
-    maxRedirects: 10,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Cookie': cookies1,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    },
-  });
-
-  const cookies2 = [
-    cookies1,
-    ...(r2.headers['set-cookie'] || []).map(c => c.split(';')[0])
-  ].join('; ');
-
-  const vs2 = extraerViewState(r2.data);
-
-  // Mostrar campos del formulario
-  const inputsMatch = r2.data.match(/<input[^>]*>/gi) || [];
-  console.log('[PASO 2] Campos del form:', inputsMatch.join('\n'));
-  console.log('[PASO 2] ViewState:', vs2?.slice(0, 30));
-
-  // PASO 3: Enviar consulta directamente con ViewState de PASO 2
-  const params3 = new URLSearchParams();
-  params3.append('formConsulta', 'formConsulta');
-  params3.append('formConsulta:cedulaTipo', 'cc');
-  params3.append('formConsulta:cedulaInput', cedula);
-  params3.append('formConsulta:j_idt17', 'Consultar');
-  params3.append('g-recaptcha-response', '');
-  params3.append('javax.faces.ViewState', vs2);
-
-  const r3 = await axios.post(`${BASE}/antecedentes.xhtml`, params3.toString(), {
-    httpsAgent: agent,
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Cookie': cookies2,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    },
-  });
-
-  console.log('[PASO 3] Status:', r3.status);
-  console.log('[PASO 3] HTML:', r3.data?.slice(0, 1000));
-
-  return res.json(parseResult(r3.data, cedula));
-
-      // PASO 4: Enviar consulta con cédula
-      const params4 = new URLSearchParams();
-      params4.append('javax.faces.partial.ajax', 'true');
-      params4.append('javax.faces.source', 'j_idt17');
-      params4.append('javax.faces.partial.execute', '@all');
-      params4.append('javax.faces.partial.render', '@all');
-      params4.append('j_idt17', 'j_idt17');
-      params4.append('formConsulta', 'formConsulta');
-      params4.append('cedulaTipo', 'cc');
-      params4.append('cedulaInput', cedula);
-      params4.append('g-recaptcha-response', '');
-      params4.append('javax.faces.ViewState', vs3);
-
-      const r4 = await axios.post(`${BASE}/antecedentes.xhtml`, params4.toString(), {
+      const r1 = await axios.get(`${BASE}/index.xhtml`, {
         httpsAgent: agent,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      });
+
+      const cookies1 = (r1.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
+      const vs1 = extraerViewState(r1.data);
+      console.log('[PASO 1] Cookies:', cookies1, '| ViewState:', vs1?.slice(0, 30));
+
+      // PASO 2: Aceptar términos — POST normal
+      const params2 = new URLSearchParams();
+      params2.append('form', 'form');
+      params2.append('aceptaOption', '0');
+      params2.append('continuarBtn', 'continuarBtn');
+      params2.append('javax.faces.ViewState', vs1);
+
+      const r2 = await axios.post(`${BASE}/index.xhtml`, params2.toString(), {
+        httpsAgent: agent,
+        maxRedirects: 10,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookies3,
+          'Cookie': cookies1,
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Faces-Request': 'partial/ajax',
-          'X-Requested-With': 'XMLHttpRequest',
         },
       });
 
-      console.log('[PASO 4] Respuesta status:', r4.status);
-      console.log('[PASO 4] HTML:', r4.data?.slice(0, 800));
+      const cookies2 = [
+        cookies1,
+        ...(r2.headers['set-cookie'] || []).map(c => c.split(';')[0])
+      ].join('; ');
 
-      return res.json(parseResult(r4.data, cedula));
+      const vs2 = extraerViewState(r2.data);
+      const inputsMatch = r2.data.match(/<input[^>]*>/gi) || [];
+      console.log('[PASO 2] Campos del form:', inputsMatch.join('\n'));
+      console.log('[PASO 2] ViewState:', vs2?.slice(0, 30));
+
+      // PASO 3: Enviar consulta con ViewState de PASO 2
+      const params3 = new URLSearchParams();
+      params3.append('formConsulta', 'formConsulta');
+      params3.append('formConsulta:cedulaTipo', 'cc');
+      params3.append('formConsulta:cedulaInput', cedula);
+      params3.append('formConsulta:j_idt17', 'Consultar');
+      params3.append('g-recaptcha-response', '');
+      params3.append('javax.faces.ViewState', vs2);
+
+      const r3 = await axios.post(`${BASE}/antecedentes.xhtml`, params3.toString(), {
+        httpsAgent: agent,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cookie': cookies2,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+      });
+
+      console.log('[PASO 3] Status:', r3.status);
+      console.log('[PASO 3] HTML:', r3.data?.slice(0, 1000));
+
+      return res.json(parseResult(r3.data, cedula));
 
     } catch (err) {
       console.error('[ERROR]', err.message);
