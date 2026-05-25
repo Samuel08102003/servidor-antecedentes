@@ -142,15 +142,3 @@ const express = require('express');
 
   const PORT = process.env.PORT || 10000;
   app.listen(PORT, () => console.log(`Servidor antecedentes activo en puerto ${PORT}`));
-
-  Y el package.json simplificado — ya no necesitas playwright:
-
-  {
-    "name": "consulta-antecedentes",
-    "version": "1.0.0",
-    "main": "index.js",
-    "dependencies": {
-      "express": "^4.18.2",
-      "axios": "^1.6.0"
-    }
-  }
