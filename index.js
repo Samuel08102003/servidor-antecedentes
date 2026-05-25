@@ -56,19 +56,29 @@ const { chromium } = require('playwright-extra');
       const page = await ctx.newPage();
 
       // PASO 1: Aceptar términos
-      await page.goto('https://antecedentes.policia.gov.co:7005/WebJudicial/index.xhtml', {
-        waitUntil: 'domcontentloaded', timeout: 30000,
-      });
-      await page.locator('#aceptaOption\\:0').click();
-      await page.waitForTimeout(400);
-      await page.locator('#continuarBtn').click();
-      await page.waitForURL('**/antecedentes.xhtml', { timeout: 15000 });
-      await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(2000);
+  await page.goto('https://antecedentes.policia.gov.co:7005/WebJudicial/index.xhtml', {
+    waitUntil: 'domcontentloaded', timeout: 30000,
+  });
+  console.log('[PASO 1] Página cargada:', page.url());
 
-      // PASO 2: Llenar cédula
-      await page.selectOption('#cedulaTipo', 'cc');
-      await page.fill('#cedulaInput', cedula);
+  await page.waitForSelector('#aceptaOption\\:0', { timeout: 15000 });
+  await page.locator('#aceptaOption\\:0').click();
+  await page.waitForTimeout(800);
+
+  await page.waitForSelector('#continuarBtn', { timeout: 10000 });
+  await page.locator('#continuarBtn').click();
+  console.log('[PASO 1] Botón continuar clickeado');
+
+  await page.waitForURL('**/antecedentes.xhtml', { timeout: 20000 });
+  await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(3000);
+  console.log('[PASO 1] URL actual:', page.url());
+
+  // PASO 2: Llenar cédula
+  await page.waitForSelector('#cedulaInput', { timeout: 20000 });
+  console.log('[PASO 2] Campo cédula encontrado');
+  await page.selectOption('#cedulaTipo', 'cc');
+  await page.fill('#cedulaInput', cedula);
 
       // PASO 3: Resolver reCAPTCHA
       const captchaSolved = await solveRecaptcha(page);
