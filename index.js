@@ -1,6 +1,6 @@
-const express = require('express');
-  const axios = require('axios');
-  const https = require('https');
+ const express = require('express');
+  const { chromium } = require('playwright');
+  const RecaptchaSolver = require('recaptcha-solver');
 
   const app = express();
   app.use(express.json());
@@ -14,93 +14,78 @@ const express = require('express');
 
   app.get('/health', (_req, res) => res.json({ ok: true }));
 
-  const agent = new https.Agent({ rejectUnauthorized: false });
-  const BASE = 'https://antecedentes.policia.gov.co:7005/WebJudicial';
-
   app.post('/consulta-antecedentes', async (req, res) => {
     const cedula = String(req.body?.cedula || '').trim();
     if (!cedula || !/^\d{5,12}$/.test(cedula)) {
       return res.status(400).json({ error: 'Cédula inválida (5-12 dígitos)' });
     }
 
+    let browser = null;
     try {
-      // PASO 1: Cargar index
-      const r1 = await axios.get(`${BASE}/index.xhtml`, {
-        httpsAgent: agent,
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      });
-      const cookies1 = (r1.headers['set-cookie'] || []).map(c => c.split(';')[0]).join('; ');
-      const vs1 = extraerViewState(r1.data);
-      console.log('[PASO 1] OK');
-
-      // PASO 2: Aceptar términos
-      const params2 = new URLSearchParams();
-      params2.append('form', 'form');
-      params2.append('aceptaOption', 'true');
-      params2.append('continuarBtn', 'continuarBtn');
-      params2.append('javax.faces.ViewState', vs1);
-
-      const r2 = await axios.post(`${BASE}/index.xhtml`, params2.toString(), {
-        httpsAgent: agent,
-        maxRedirects: 10,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookies1,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-      });
-      const cookies2 = [cookies1, ...(r2.headers['set-cookie'] || []).map(c => c.split(';')[0])].join('; ');
-      console.log('[PASO 2] OK');
-
-      // PASO 3: GET antecedentes
-      const r3 = await axios.get(`${BASE}/antecedentes.xhtml`, {
-        httpsAgent: agent,
-        headers: { 'Cookie': cookies2, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      });
-      const cookies3 = [cookies2, ...(r3.headers['set-cookie'] || []).map(c => c.split(';')[0])].join('; ');
-      const vs3 = extraerViewState(r3.data);
-
-      // Ver todos los campos del formulario
-      const selects = r3.data.match(/<select[^>]*>/gi) || [];
-      const buttons = r3.data.match(/<(?:input|button)[^>]*(?:submit|button|CommandButton)[^>]*>/gi) || [];
-      console.log('[PASO 3] ViewState:', vs3?.slice(0, 30));
-      console.log('[PASO 3] Selects:', selects.join('\n'));
-      console.log('[PASO 3] Buttons:', buttons.join('\n'));
-
-      // PASO 4: Enviar consulta con nombres correctos
-      const params4 = new URLSearchParams();
-      params4.append('formAntecedentes', 'formAntecedentes');
-      params4.append('cedulaInput', cedula);
-      params4.append('cedulaTipo', 'cc');
-      params4.append('j_idt17', 'j_idt17');
-      params4.append('g-recaptcha-response', '');
-      params4.append('javax.faces.ViewState', vs3);
-
-      const r4 = await axios.post(`${BASE}/antecedentes.xhtml`, params4.toString(), {
-        httpsAgent: agent,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Cookie': cookies3,
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
+      browser = await chromium.launch({
+        headless: false,
+        args: [
+          '--no-sandbox', '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage', '--no-first-run', '--no-zygote',
+          '--disable-blink-features=AutomationControlled',
+        ],
       });
 
-      console.log('[PASO 4] Status:', r4.status);
-      const snippet = r4.data.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 600);
-      console.log('[PASO 4] TEXTO:', snippet);
+      const ctx = await browser.newContext({
+        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        locale: 'es-CO',
+        timezoneId: 'America/Bogota',
+        viewport: { width: 1280, height: 800 },
+      });
 
-      return res.json(parseResult(r4.data, cedula));
+      const page = await ctx.newPage();
+
+      // PASO 1: Aceptar términos
+      await page.goto('https://antecedentes.policia.gov.co:7005/WebJudicial/index.xhtml', {
+        waitUntil: 'domcontentloaded', timeout: 30000,
+      });
+      await page.waitForSelector('#aceptaOption\\:0', { timeout: 15000 });
+      await page.locator('#aceptaOption\\:0').click();
+      await page.waitForTimeout(500);
+      await page.locator('#continuarBtn').click();
+      await page.waitForURL('**/formAntecedentes.xhtml', { timeout: 15000 });
+      await page.waitForLoadState('domcontentloaded');
+      await page.waitForTimeout(2000);
+      console.log('[PASO 1] Términos aceptados');
+
+      // PASO 2: Llenar cédula
+      await page.waitForSelector('#cedulaInput', { timeout: 10000 });
+      await page.selectOption('#cedulaTipo', 'cc');
+      await page.fill('#cedulaInput', cedula);
+      console.log('[PASO 2] Cédula ingresada:', cedula);
+
+      // PASO 3: Resolver CAPTCHA automáticamente
+      console.log('[PASO 3] Resolviendo CAPTCHA...');
+      const solver = new RecaptchaSolver(page);
+      await solver.solve();
+      console.log('[PASO 3] CAPTCHA resuelto');
+
+      // PASO 4: Esperar que el poll detecte el CAPTCHA y muestre resultados
+      await Promise.race([
+        page.waitForSelector(':text("asuntos pendientes")', { timeout: 30000 }),
+        page.waitForSelector(':text("no tiene asuntos")', { timeout: 30000 }),
+        page.waitForSelector(':text("no encontrado")', { timeout: 30000 }),
+        page.waitForTimeout(20000),
+      ]).catch(() => {});
+
+      const html = await page.content();
+      const texto = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      console.log('[PASO 4] Resultado:', texto.slice(0, 400));
+
+      return res.json(parseResult(html, cedula));
 
     } catch (err) {
       console.error('[ERROR]', err.message);
       return res.status(500).json({ error: err.message });
+    } finally {
+      if (browser) await browser.close().catch(() => {});
     }
   });
-
-  function extraerViewState(html) {
-    const match = html.match(/javax\.faces\.ViewState[^>]*value="([^"]+)"/);
-    return match ? match[1] : null;
-  }
 
   function parseResult(html, cedula) {
     const lower = (html || '').toLowerCase();
@@ -109,22 +94,18 @@ const express = require('express');
     const nombrePolicia = nombreMatch ? nombreMatch[1].trim() : null;
 
     if (lower.includes('no tiene asuntos pendientes')) {
-      return { cedula, cedula_existe: true, nombre_policia: nombrePolicia, tiene_antecedentes: false, estado: 'limpio', mensaje: 'Sin
-   asuntos pendientes judiciales', consultado_en: ts };
+      return { cedula, cedula_existe: true, nombre_policia: nombrePolicia, tiene_antecedentes: false, estado: 'limpio', mensaje: 'Sin asuntos pendientes judiciales', consultado_en: ts };
     }
     if (lower.includes('tiene asuntos pendientes') || lower.includes('registra antecedentes')) {
-      return { cedula, cedula_existe: true, nombre_policia: nombrePolicia, tiene_antecedentes: true, estado: 'alerta', mensaje:
-  'ALERTA: Tiene asuntos pendientes', consultado_en: ts };
+      return { cedula, cedula_existe: true, nombre_policia: nombrePolicia, tiene_antecedentes: true, estado: 'alerta', mensaje: 'ALERTA: Tiene asuntos pendientes', consultado_en: ts };
     }
     if (lower.includes('no encontrado') || lower.includes('no se encontró')) {
-      return { cedula, cedula_existe: false, nombre_policia: null, tiene_antecedentes: null, estado: 'no_encontrado', mensaje:
-  'Cédula NO existe en el sistema', consultado_en: ts };
+      return { cedula, cedula_existe: false, nombre_policia: null, tiene_antecedentes: null, estado: 'no_encontrado', mensaje: 'Cédula NO existe en el sistema', consultado_en: ts };
     }
 
     const snippet = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
     console.log('[NO RECONOCIDO]', snippet);
-    return { cedula, tiene_antecedentes: null, estado: 'indeterminado', mensaje: 'No se pudo determinar. Verifica manualmente.',
-  consultado_en: ts };
+    return { cedula, tiene_antecedentes: null, estado: 'indeterminado', mensaje: 'No se pudo determinar. Verifica manualmente.', consultado_en: ts };
   }
 
   const PORT = process.env.PORT || 10000;
